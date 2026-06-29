@@ -14,7 +14,7 @@ import type {
   GqlWorkflowEvent,
 } from "@/lib/api/graphql-types";
 import type { WorkflowService } from "@/lib/api/workflow-service";
-import { useAppContext } from "@/components/providers/marketplace";
+import { buildContentEditorUrl } from "@/lib/api/host-url";
 import { formatSitecoreDate } from "@/lib/date-utils";
 import {
   Sheet,
@@ -59,12 +59,11 @@ export function ItemDetailDrawer({
   language,
   workflowService,
 }: ItemDetailDrawerProps) {
-  const appContext = useAppContext();
-
   const [detail, setDetail] = useState<GqlItemDetail | null>(null);
   const [history, setHistory] = useState<GqlWorkflowEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hostOrigin, setHostOrigin] = useState<string | null>(null);
 
   // ── Fetch item detail ─────────────────────────────────────────────────
 
@@ -97,13 +96,23 @@ export function ItemDetailDrawer({
     }
   }, [open, itemId, fetchDetail]);
 
+  // ── Resolve host origin lazily (once per drawer session) ──────────────
+
+  useEffect(() => {
+    if (!open || hostOrigin) return;
+    let cancelled = false;
+    workflowService.getHostOrigin().then((origin) => {
+      if (!cancelled) setHostOrigin(origin);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, hostOrigin, workflowService]);
+
   // ── Content Editor URL ────────────────────────────────────────────────
 
-  // const contentEditorUrl =
-  //   appContext.url && itemId
-  //     ? `${appContext.url.replace(/\/$/, "")}/sitecore/shell/Applications/Content%20Editor?fo=${encodeURIComponent(itemId)}&la=${encodeURIComponent(language ?? "en")}`
-  //     : null;
- const contentEditorUrl = null; // Disabled for now
+  const contentEditorUrl = buildContentEditorUrl(hostOrigin, itemId, language);
+
   // ── Pages (Page Builder) URL ──────────────────────────────────────────
 
   // Strip braces from itemId for Pages URL: {GUID} → GUID

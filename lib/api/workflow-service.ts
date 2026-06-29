@@ -10,6 +10,7 @@
 
 import type { ClientSDK } from "@sitecore-marketplace-sdk/client";
 import { SITECORE_FIELDS } from "./sitecore-fields";
+import { resolveHostOrigin } from "./host-url";
 import type {
   GetWorkflowsResponse,
   GetWorkflowBoardResponse,
@@ -344,6 +345,14 @@ export class WorkflowService {
   async getSites(): Promise<GqlSite[]> {
     const result = await this.request<GetSitesResponse>(GET_SITES);
     return Array.isArray(result.sites) ? result.sites : [];
+  }
+
+  /**
+   * Resolves the XM Cloud authoring host origin (used to build Content Editor
+   * deep-links). Delegates to the standalone `resolveHostOrigin` helper.
+   */
+  async getHostOrigin(): Promise<string | null> {
+    return resolveHostOrigin(this.client, this.sitecoreContextId);
   }
 
   // ── 2. Get per-state item counts (batched as aliases) ───────────────────
