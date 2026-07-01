@@ -42,6 +42,8 @@ interface WorkflowBoardProps {
   workflow: GqlWorkflow;
   workflowService: WorkflowService;
   selectedSite: GqlSite | null;
+  /** ISO name of the selected language filter (e.g. "en", "fr-FR") or null for all */
+  selectedLanguage: string | null;
 }
 
 const BULK_COMMAND_BATCH_SIZE = 50;
@@ -70,6 +72,7 @@ export function WorkflowBoard({
   workflow,
   workflowService,
   selectedSite,
+  selectedLanguage,
 }: WorkflowBoardProps) {
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -326,6 +329,7 @@ const gridClass = {
             state={state}
             workflowService={workflowService}
             selectedSite={selectedSite}
+            selectedLanguage={selectedLanguage}
             onDrop={handleDrop}
             onBulkCommand={executeBulkCommand}
             onItemClick={handleItemClick}
