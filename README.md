@@ -14,6 +14,10 @@ Modern workflow management for SitecoreAI. Runs as a Sitecore Marketplace app an
 
   ![Site filter](doc/images/feature-site-filter.png)
 
+- **Language filter** — narrow items down by language within a tenant
+
+  ![Language filter](doc/images/feature-languagefilter.png)
+
 - **Drag-and-drop transitions** — move items between states, respecting the configured next allowed states
 
   ![Drag and drop](doc/images/feature-drag-drop.png)
@@ -26,7 +30,7 @@ Modern workflow management for SitecoreAI. Runs as a Sitecore Marketplace app an
 
   ![Item detail](doc/images/feature-item-detail.png)
 
-- **Open in Page Builder** — jump directly into Pages from the detail drawer
+- **Open in Pages/Content Editor/Content Mode** — jump directly into Pages/Content Editor/Pages (Content Mode) from the item card
 
   ![Open in Pages](doc/images/feature-open-in-pages.png)
 
