@@ -4,12 +4,29 @@
 
 "use client";
 
+import { useState } from "react";
 import type { GqlWorkItem } from "@/lib/api/graphql-types";
 import { formatSitecoreDate } from "@/lib/date-utils";
 import { useBoardDnd } from "./board-dnd-context";
+import {
+  useItemLinks,
+  resolveSiteForItem,
+} from "./item-links-context";
+import {
+  buildContentEditorUrl,
+  buildPagesUrl,
+} from "@/lib/api/host-url";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { FileText, Globe, Clock, Layers } from "lucide-react";
+import {
+  FileText,
+  Globe,
+  Clock,
+  Layers,
+  MoreVertical,
+  ExternalLink,
+} from "lucide-react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type React from "react";
 
 interface WorkItemCardProps {
@@ -18,12 +35,27 @@ interface WorkItemCardProps {
   onClick?: (item: GqlWorkItem) => void;
 }
 
+/** True when `value` is a syntactically valid https:// URL. */
+function isValidHttpsUrl(value: string | null | undefined): value is string {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export function WorkItemCard({ item, stateId, onClick }: WorkItemCardProps) {
   const { startDrag, endDrag, dragPayload } = useBoardDnd();
 
+  // Identify a card uniquely by itemId + language + version. Without the
+  // version check, multiple versions of the same item in the same language
+  // would all appear as "dragging" whenever any one of them is picked up.
   const isDragging =
     dragPayload?.item.itemId === item.itemId &&
-    dragPayload?.item.language.name === item.language.name;
+    dragPayload?.item.language.name === item.language.name &&
+    dragPayload?.item.version === item.version;
 
   // ── HTML5 DnD handlers ────────────────────────────────────────────────
 
@@ -73,11 +105,7 @@ export function WorkItemCard({ item, stateId, onClick }: WorkItemCardProps) {
     >
       {/* ── Item name ────────────────────────────────────────────────── */}
       <div className="flex items-start gap-2 mb-2">
-        {item.hasPresentation ? (
-          <Globe className="size-4 mt-0.5 shrink-0 text-primary" />
-        ) : (
-          <FileText className="size-4 mt-0.5 shrink-0 text-subtle-text" />
-        )}
+        <ItemIcon item={item} />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium leading-tight truncate">
             {item.displayName || item.name}
@@ -86,6 +114,7 @@ export function WorkItemCard({ item, stateId, onClick }: WorkItemCardProps) {
             <p className="text-xs text-subtle-text truncate">{item.name}</p>
           )}
         </div>
+        <ItemActionsMenu item={item} />
       </div>
 
       {/* ── Metadata rows ────────────────────────────────────────────── */}
@@ -142,5 +171,136 @@ export function WorkItemCard({ item, stateId, onClick }: WorkItemCardProps) {
         )}
       </div>
     </div>
+  );
+}
+
+// ── Icon: prefer the item's `icon` URL (when it's a valid https:// URL) ──
+function ItemIcon({ item }: { item: GqlWorkItem }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const useRemoteIcon = !imgFailed && isValidHttpsUrl(item.icon);
+
+  if (useRemoteIcon) {
+    return (
+      
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={item.icon as string}
+        alt=""
+        aria-hidden="true"
+        className="size-4 mt-0.5 shrink-0 object-contain"
+        onError={() => setImgFailed(true)}
+      />
+    );
+  }
+
+  return item.hasPresentation ? (
+    <Globe className="size-4 mt-0.5 shrink-0 text-primary" />
+  ) : (
+    <FileText className="size-4 mt-0.5 shrink-0 text-subtle-text" />
+  );
+}
+
+// ── Per-card actions dropdown ────────────────────────────────────────────
+// Renders the "Open in …" links. Pages-related options are only shown when
+// the item has presentation. Content mode requires tenant + organization.
+function ItemActionsMenu({ item }: { item: GqlWorkItem }) {
+  const links = useItemLinks();
+  if (!links) return null;
+
+  const language = item.language.name;
+  const version = item.version;
+  const siteName = resolveSiteForItem(links, item)?.name ?? null;
+
+  const contentEditorUrl = buildContentEditorUrl(
+    links.hostOrigin,
+    item.itemId,
+    language,
+  );
+
+  const pagesArgs = {
+    tenantName: links.tenantName,
+    organizationId: links.organizationId,
+    itemId: item.itemId,
+    language,
+    siteName,
+    version,
+  } as const;
+
+  const pagesUrl = item.hasPresentation
+    ? buildPagesUrl({ ...pagesArgs, mode: "editor" })
+    : null;
+
+  const pagesContentUrl = buildPagesUrl({ ...pagesArgs, mode: "content" });
+
+  const hasAnyLink = Boolean(contentEditorUrl || pagesUrl || pagesContentUrl);
+  if (!hasAnyLink) return null;
+
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button
+          type="button"
+          aria-label="Item actions"
+          onClick={(e) => {
+            // Prevent the card's click handler (which opens the drawer)
+            e.stopPropagation();
+          }}
+          onPointerDown={(e) => {
+            // Prevent the card's HTML5 drag from starting on the trigger
+            e.stopPropagation();
+          }}
+          className="p-1 -mt-1 -mr-1 rounded shrink-0 text-subtle-text hover:bg-neutral-100 hover:text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
+        >
+          <MoreVertical className="size-4" />
+        </button>
+      </DropdownMenu.Trigger>
+
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          className="bg-white border rounded-md p-1 shadow-md min-w-[220px] z-50"
+          align="end"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {contentEditorUrl && (
+            <ActionItem href={contentEditorUrl}>
+              Open in Content Editor
+            </ActionItem>
+          )}
+          {pagesUrl && (
+            <ActionItem href={pagesUrl}>Open in Pages</ActionItem>
+          )}
+          {pagesContentUrl && (
+            <ActionItem href={pagesContentUrl}>
+              Open in Pages (Content Mode)
+            </ActionItem>
+          )}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
+
+function ActionItem({
+  href,
+  children,
+}: {
+  href: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <DropdownMenu.Item
+      asChild
+      className="text-xs px-2 py-1.5 outline-none cursor-pointer hover:bg-neutral-100 rounded flex items-center gap-1.5"
+    >
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <ExternalLink className="size-3.5 shrink-0" />
+        <span>{children}</span>
+      </a>
+    </DropdownMenu.Item>
   );
 }

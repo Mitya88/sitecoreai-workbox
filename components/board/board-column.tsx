@@ -34,6 +34,8 @@ interface BoardColumnProps {
   state: GqlWorkflowState;
   workflowService: WorkflowService;
   selectedSite: GqlSite | null;
+  /** ISO name of the selected language filter (e.g. "en", "fr-FR") or null for all */
+  selectedLanguage: string | null;
   /** Callback when a drop occurs on this column */
   onDrop: (
     item: GqlWorkItem,
@@ -58,6 +60,7 @@ export function BoardColumn({
   state,
   workflowService,
   selectedSite,
+  selectedLanguage,
   onDrop,
   onBulkCommand,
   onItemClick,
@@ -101,6 +104,21 @@ export function BoardColumn({
     [selectedSite]
   );
 
+  const filterItemsForLanguage = useCallback(
+    (nextItems: GqlWorkItem[]) => {
+      if (!selectedLanguage) return nextItems;
+      return nextItems.filter(
+        (item) => item.language.name === selectedLanguage
+      );
+    },
+    [selectedLanguage]
+  );
+
+  // When any client-side filter is active we cannot rely on server pagination
+  // (the server only paginates unfiltered results), so fetch everything and
+  // filter locally.
+  const hasClientFilter = selectedSite !== null || selectedLanguage !== null;
+
   const getAllItemsForState = useCallback(async () => {
     const allItems: GqlWorkItem[] = [];
     let cursor: string | undefined;
@@ -133,9 +151,11 @@ export function BoardColumn({
       }
 
       try {
-        if (selectedSite && !after) {
+        if (hasClientFilter && !after) {
           const allItems = await getAllItemsForState();
-          const filteredItems = filterItemsForSite(allItems);
+          const filteredItems = filterItemsForLanguage(
+            filterItemsForSite(allItems)
+          );
 
           setItems(filteredItems);
           setItemsCount(filteredItems.length);
@@ -164,8 +184,9 @@ export function BoardColumn({
       }
     },
     [
+      hasClientFilter,
       filterItemsForSite,
-      selectedSite,
+      filterItemsForLanguage,
       workflowService,
       workflowId,
       state.stateId,
@@ -249,7 +270,9 @@ export function BoardColumn({
     setBulkCommandId(command.commandId);
 
     try {
-      const allItems = filterItemsForSite(await getAllItemsForState());
+      const allItems = filterItemsForLanguage(
+        filterItemsForSite(await getAllItemsForState())
+      );
       await onBulkCommand(allItems, state.stateId, command);
     } finally {
       setBulkCommandId(null);

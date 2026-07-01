@@ -3,7 +3,7 @@
 //
 // Opened by clicking a card on the board. Fetches full item detail including
 // fields, versions, workflow history, publish status, and access rights.
-// Includes "Open in Content Editor" link using the host URL from AppContext.
+// "Open in …" links live on each card's kebab menu (see WorkItemCard).
 // ---------------------------------------------------------------------------
 
 "use client";
@@ -14,7 +14,6 @@ import type {
   GqlWorkflowEvent,
 } from "@/lib/api/graphql-types";
 import type { WorkflowService } from "@/lib/api/workflow-service";
-import { buildContentEditorUrl } from "@/lib/api/host-url";
 import { formatSitecoreDate } from "@/lib/date-utils";
 import {
   Sheet,
@@ -24,11 +23,9 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  ExternalLink,
   Globe,
   Clock,
   Lock,
@@ -63,7 +60,6 @@ export function ItemDetailDrawer({
   const [history, setHistory] = useState<GqlWorkflowEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hostOrigin, setHostOrigin] = useState<string | null>(null);
 
   // ── Fetch item detail ─────────────────────────────────────────────────
 
@@ -95,31 +91,6 @@ export function ItemDetailDrawer({
       setError(null);
     }
   }, [open, itemId, fetchDetail]);
-
-  // ── Resolve host origin lazily (once per drawer session) ──────────────
-
-  useEffect(() => {
-    if (!open || hostOrigin) return;
-    let cancelled = false;
-    workflowService.getHostOrigin().then((origin) => {
-      if (!cancelled) setHostOrigin(origin);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, hostOrigin, workflowService]);
-
-  // ── Content Editor URL ────────────────────────────────────────────────
-
-  const contentEditorUrl = buildContentEditorUrl(hostOrigin, itemId, language);
-
-  // ── Pages (Page Builder) URL ──────────────────────────────────────────
-
-  // Strip braces from itemId for Pages URL: {GUID} → GUID
-  const pagesUrl =
-    detail && itemId
-      ? `https://pages.sitecorecloud.io/editor?sc_itemid=${itemId.replace(/[{}]/g, "")}&sc_lang=${encodeURIComponent(language ?? "en")}&sc_version=${detail.version}`
-      : null;
 
   // ── Render ────────────────────────────────────────────────────────────
 
@@ -154,31 +125,6 @@ export function ItemDetailDrawer({
           <DrawerSkeleton />
         ) : detail ? (
           <div className="flex flex-col gap-5 px-4 pb-6">
-            {/* ── Open in Content Editor / Pages ────────────────────── */}
-            <div className="flex flex-wrap gap-2">
-              {contentEditorUrl && (
-                <Button variant="outline" size="sm" asChild>
-                  <a href={contentEditorUrl} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="size-3.5 mr-1.5" />
-                    Open in Content Editor
-                  </a>
-                </Button>
-              )}
-              {pagesUrl && detail.hasPresentation && (
-                <Button variant="outline" size="sm" asChild>
-                  <a href={pagesUrl} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="size-3.5 mr-1.5" />
-                    Open in Pages
-                  </a>
-                </Button>
-              )}
-              {!contentEditorUrl && !pagesUrl && (
-                <p className="text-xs text-subtle-text italic">
-                  External links unavailable — host URL not set
-                </p>
-              )}
-            </div>
-
             {/* ── Basic info ─────────────────────────────────────────── */}
             <Section title="Item Information">
               <InfoRow icon={<FileText className="size-3.5" />} label="Name" value={detail.name} />

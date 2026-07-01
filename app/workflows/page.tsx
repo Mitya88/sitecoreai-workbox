@@ -17,11 +17,15 @@ import {
 } from "@/components/ui/select";
 import { WorkflowService } from "@/lib/api/workflow-service";
 import { WorkflowBoard } from "@/components/board/workflow-board";
+import { ItemLinksProvider } from "@/components/board/item-links-context";
 import type { GqlSite, GqlWorkflow } from "@/lib/api/graphql-types";
+import type { Xmapp } from "@sitecore-marketplace-sdk/xmc";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { DebugAppContext } from "@/components/debug/debug-app-context";
+
+const ALL_LANGUAGES = "all";
 
 export default function WorkflowsPage() {
   const { selectedTenant, setSelectedTenant } = useTenantContext();
@@ -36,9 +40,14 @@ export default function WorkflowsPage() {
   );
   const [sites, setSites] = useState<GqlSite[]>([]);
   const [selectedSiteName, setSelectedSiteName] = useState("all");
+  const [languages, setLanguages] = useState<Xmapp.Language[]>([]);
+  const [selectedLanguageName, setSelectedLanguageName] =
+    useState<string>(ALL_LANGUAGES);
   const [loadingWorkflows, setLoadingWorkflows] = useState(true);
   const [loadingSites, setLoadingSites] = useState(false);
+  const [loadingLanguages, setLoadingLanguages] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hostOrigin, setHostOrigin] = useState<string | null>(null);
 
   // ── Derived ─────────────────────────────────────────────────────────────
   const workflowService = useMemo(() => {
@@ -54,6 +63,12 @@ export default function WorkflowsPage() {
   const selectedSite = useMemo(
     () => sites.find((site) => site.name === selectedSiteName) ?? null,
     [selectedSiteName, sites]
+  );
+
+  const selectedLanguage = useMemo(
+    () =>
+      selectedLanguageName === ALL_LANGUAGES ? null : selectedLanguageName,
+    [selectedLanguageName]
   );
 
   // ── Guard: restore tenant on direct entry, otherwise redirect ──────────
@@ -124,6 +139,60 @@ export default function WorkflowsPage() {
     }
 
     fetchSites();
+  }, [workflowService]);
+
+  // ── Fetch languages (from XMC Sites SDK, per tenant) ──────────────────
+  useEffect(() => {
+    if (!selectedTenant) return;
+
+    const contextId = selectedTenant.context.preview;
+    if (!contextId) {
+      setLanguages([]);
+      setSelectedLanguageName(ALL_LANGUAGES);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function fetchLanguages() {
+      setLoadingLanguages(true);
+      try {
+        const response = await client.query("xmc.sites.listLanguages", {
+          params: { query: { sitecoreContextId: contextId } },
+        });
+        if (cancelled) return;
+        const list = (response.data?.data ?? []) as Xmapp.Language[];
+        setLanguages(list);
+        setSelectedLanguageName(ALL_LANGUAGES);
+      } catch (err) {
+        if (cancelled) return;
+        console.error("Failed to fetch languages:", err);
+        setLanguages([]);
+        setSelectedLanguageName(ALL_LANGUAGES);
+      } finally {
+        if (!cancelled) setLoadingLanguages(false);
+      }
+    }
+
+    fetchLanguages();
+    return () => {
+      cancelled = true;
+    };
+  }, [client, selectedTenant]);
+
+  // ── Resolve host origin once per workflow service (for Content Editor URL)
+  useEffect(() => {
+    if (!workflowService) {
+      setHostOrigin(null);
+      return;
+    }
+    let cancelled = false;
+    workflowService.getHostOrigin().then((origin) => {
+      if (!cancelled) setHostOrigin(origin);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [workflowService]);
 
   // ── Early returns ─────────────────────────────────────────────────────
@@ -202,18 +271,62 @@ export default function WorkflowsPage() {
               </SelectContent>
             </Select>
           </div>
+
+          <div className="flex items-center gap-2">
+            <label
+              htmlFor="language-select"
+              className="text-sm font-medium whitespace-nowrap"
+            >
+              Language
+            </label>
+
+            <Select
+              value={selectedLanguageName}
+              onValueChange={setSelectedLanguageName}
+              disabled={loadingLanguages || languages.length === 0}
+            >
+              <SelectTrigger id="language-select" className="w-[240px]">
+                <SelectValue placeholder="All" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_LANGUAGES}>All</SelectItem>
+                {languages.map((lang) => {
+                  const value = lang.name ?? lang.iso;
+                  if (!value) return null;
+                  const label =
+                    lang.englishName ?? lang.displayName ?? value;
+                  return (
+                    <SelectItem key={value} value={value}>
+                      {label} ({value})
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         {/* ── Board ────────────────────────────────────────────────────── */}
         {loadingWorkflows ? (
           <BoardSkeleton />
         ) : selectedWorkflow && workflowService ? (
-          <WorkflowBoard
-            key={selectedWorkflow.workflowId}
-            workflow={selectedWorkflow}
-            workflowService={workflowService}
-            selectedSite={selectedSite}
-          />
+          <ItemLinksProvider
+            value={{
+              hostOrigin,
+              tenantName: selectedTenant.tenantName ?? null,
+              organizationId: appContext.organizationId ?? null,
+              sites,
+              selectedSite,
+            }}
+          >
+            <WorkflowBoard
+              key={selectedWorkflow.workflowId}
+              workflow={selectedWorkflow}
+              workflowService={workflowService}
+              selectedSite={selectedSite}
+              selectedLanguage={selectedLanguage}
+            />
+          </ItemLinksProvider>
         ) : workflows.length === 0 ? (
           <Card style="outline" padding="lg">
             <CardContent className="py-10 text-center text-sm text-subtle-text">
